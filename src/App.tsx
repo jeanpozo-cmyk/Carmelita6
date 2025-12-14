@@ -3,27 +3,31 @@ import {
   Leaf, DollarSign, CreditCard, ShoppingBag, Calendar, MessageCircle, 
   PenTool, GraduationCap, Settings, Menu, X, PlusCircle, Video, 
   Image as ImageIcon, ArrowLeft, ArrowRight, Heart, Search, AlertTriangle, CheckCircle,
-  LifeBuoy, Star, Users, TrendingUp, Lightbulb, MapPin, Share2, Award, BookOpen, UserCircle, Trash2, Target, Megaphone
+  LifeBuoy, Star, Users, TrendingUp, Lightbulb, MapPin, Share2, Award, BookOpen, UserCircle, Trash2, Target, Megaphone, Lock, Mail, Loader2
 } from 'lucide-react';
 
 import LandingPage from './components/LandingPage';
 import AdminPanel from './components/AdminPanel';
 import { UserRole, UserProfile, FinancialRecord, SavingsGoal, Debt, Client, InventoryItem, CalendarEvent } from './types';
 import { askCarmelita, generateAgencyImage, generateAgencyVideo, analyzeCreditRisk, generateClientMessage, generateMarketingStrategy } from './services/geminiService';
+import { loginWithGoogle, logout } from './services/authService';
 
 // --- MAIN APP COMPONENT ---
 
 export default function App() {
   // --- STATE ---
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [authMode, setAuthMode] = useState<'LOGIN' | 'REGISTER' | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  
   const [currentView, setCurrentView] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   
   // --- MOCK DATA STORE ---
   const [records, setRecords] = useState<FinancialRecord[]>([
-    { id: '1', type: 'INCOME', amount: 5000, description: 'Venta de Pasteles', category: 'Ventas', date: '2024-03-20', urgency: 'GREEN' },
-    { id: '2', type: 'EXPENSE', amount: 1200, description: 'Harina y Huevos', category: 'Materia Prima', date: '2024-03-21', urgency: 'RED' }
+    { id: '1', type: 'INCOME', amount: 15000, description: 'Venta de Pasteles', category: 'Ventas', date: '2024-03-20', urgency: 'GREEN' },
+    { id: '2', type: 'EXPENSE', amount: 4200, description: 'Harina y Huevos', category: 'Materia Prima', date: '2024-03-21', urgency: 'RED' }
   ]);
   const [savings, setSavings] = useState<SavingsGoal[]>([
     { id: '1', name: 'Horno Industrial', targetAmount: 15000, currentAmount: 4500, deadline: '2024-12-01' }
@@ -48,18 +52,56 @@ export default function App() {
 
   // --- HANDLERS ---
 
-  const handleLogin = () => {
+  const handleGoogleAuth = async (isRegistering: boolean) => {
+    try {
+      const googleUser: any = await loginWithGoogle();
+      
+      if (!googleUser) return; // Error handling done in service
+
+      if (googleUser.isDemo) {
+        alert("⚠️ Modo Demo: No se detectó configuración de Firebase. Entrando en modo simulación.");
+      }
+
+      // Check if user exists in DB (Simulation)
+      // In real app: await fetchUserFromFirestore(googleUser.uid)
+      
+      const isNewUser = isRegistering; // In reality check DB
+      
+      if (isNewUser) {
+        setAuthMode(null);
+        setShowOnboarding(true);
+      } else {
+        setUser({
+          uid: googleUser.uid,
+          displayName: googleUser.displayName || 'Socia',
+          email: googleUser.email || '',
+          role: 'USER',
+          businessType: 'General',
+          credits: 50,
+          onboardingComplete: true,
+          bio: 'Emprendedora',
+          avatar: googleUser.photoURL
+        });
+        setAuthMode(null);
+      }
+    } catch (e) {
+      alert("Hubo un error al conectar con Google. Intenta de nuevo.");
+    }
+  };
+
+  const completeOnboarding = (data: any) => {
     setUser({
-      uid: 'user-123',
-      displayName: 'Ana María',
-      email: 'ana@example.com',
+      uid: `user-${Date.now()}`,
+      displayName: data.name,
+      email: 'nueva@socia.com',
       role: 'USER',
-      businessType: 'Reposteria',
-      credits: 50,
+      businessType: data.businessType,
+      credits: 20, // Welcome bonus
       onboardingComplete: true,
-      bio: "Haciendo los pasteles más ricos del barrio.",
-      badges: ['Semilla Plantada', 'Primer Venta']
+      bio: `Mi meta: ${data.goal}`,
+      badges: ['Bienvenida', 'Negocio Registrado']
     });
+    setShowOnboarding(false);
   };
 
   const handleAdminLogin = () => {
@@ -74,7 +116,11 @@ export default function App() {
     });
   };
 
-  const handleLogout = () => setUser(null);
+  const handleLogout = async () => {
+    await logout();
+    setUser(null);
+    setCurrentView('dashboard');
+  };
 
   // Initial Advice Logic
   useEffect(() => {
@@ -83,7 +129,7 @@ export default function App() {
         setLoading(true);
         const totalIncome = records.filter(r=>r.type==='INCOME').reduce((a,b)=>a+b.amount,0);
         const totalDebt = debts.reduce((a,b)=>a+b.totalAmount,0);
-        const prompt = `Analiza brevemente: Ingresos $${totalIncome}, Deudas $${totalDebt}. Dame un consejo ejecutivo de una frase.`;
+        const prompt = `Analiza esto: Ingresos $${totalIncome}, Deudas $${totalDebt}. Dame un consejo de amiga experta en una frase (directo y al grano).`;
         const advice = await askCarmelita(prompt, 'general');
         setCarmelitaAdvice(advice);
         setLoading(false);
@@ -95,12 +141,30 @@ export default function App() {
   // --- ROUTER ---
 
   if (!user) {
-    return <LandingPage onLogin={handleLogin} onAdminLogin={handleAdminLogin} onAffiliate={() => setUser({ ...user!, role: 'GUEST', view: 'affiliate_landing' } as any)} />;
+    return (
+      <>
+        <LandingPage 
+          onLogin={() => setAuthMode('LOGIN')} 
+          onRegister={() => setAuthMode('REGISTER')} 
+          onAdminLogin={handleAdminLogin} 
+          onAffiliate={() => setUser({ ...user!, role: 'GUEST', view: 'affiliate_landing' } as any)} 
+        />
+        {authMode && (
+          <AuthModal 
+            mode={authMode} 
+            onClose={() => setAuthMode(null)} 
+            onGoogleClick={() => handleGoogleAuth(authMode === 'REGISTER')}
+          />
+        )}
+        {showOnboarding && (
+          <OnboardingWizard onComplete={completeOnboarding} />
+        )}
+      </>
+    );
   }
 
-  // Handle Guest/Affiliate application view from Landing Page
   if ((user as any).view === 'affiliate_landing') {
-     return <AffiliateLanding onLogin={handleLogin} onBack={() => setUser(null)} />;
+     return <AffiliateLanding onBack={() => setUser(null)} />;
   }
 
   if (user.role === 'SUPERADMIN') {
@@ -109,7 +173,6 @@ export default function App() {
 
   const renderContent = () => {
     switch(currentView) {
-      // Core Views
       case 'dashboard': return <Dashboard records={records} advice={carmelitaAdvice} loading={loading} onViewChange={setCurrentView} userName={user.displayName} />;
       case 'tools': return <ToolsGrid onViewChange={setCurrentView} />;
       case 'agency': return <Agency user={user} />;
@@ -118,7 +181,6 @@ export default function App() {
       case 'store': return <Store user={user} />;
       case 'support': return <SupportSection user={user} />;
       
-      // Specific Tools
       case 'tool-register': return <FinancialRegister records={records} setRecords={setRecords} onBack={() => setCurrentView('tools')} />;
       case 'tool-savings': return <SavingsSeeds goals={savings} setGoals={setSavings} onBack={() => setCurrentView('tools')} />;
       case 'tool-debt': return <DebtFreedom debts={debts} setDebts={setDebts} onBack={() => setCurrentView('tools')} />;
@@ -189,6 +251,151 @@ export default function App() {
 
 // --- SUB COMPONENTS ---
 
+const AuthModal = ({ mode, onClose, onGoogleClick }: any) => {
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleClick = async () => {
+    setIsLoading(true);
+    await onGoogleClick();
+    setIsLoading(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fade-in backdrop-blur-sm">
+       <div className="bg-white rounded-3xl p-8 max-w-md w-full relative shadow-2xl">
+          <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X /></button>
+          
+          <div className="text-center mb-6">
+            <div className="w-16 h-16 bg-rose-100 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl font-bold">C</div>
+            <h2 className="text-3xl font-script font-bold text-rose-600">
+              {mode === 'LOGIN' ? 'Bienvenida de nuevo' : 'Únete a Carmelita'}
+            </h2>
+            <p className="text-gray-500 mt-2 text-sm">Tu negocio florece cuando tú tienes paz.</p>
+          </div>
+
+          <div className="space-y-4">
+             <button onClick={handleClick} disabled={isLoading} className="w-full flex items-center justify-center gap-3 bg-white border-2 border-gray-200 p-3 rounded-xl font-bold hover:bg-gray-50 transition hover:border-gray-300 disabled:opacity-70">
+               {isLoading ? <Loader2 className="animate-spin" /> : <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5" alt="Google" />}
+               <span>Continuar con Google</span>
+             </button>
+             
+             <div className="flex items-center gap-2 text-gray-400 text-sm py-2">
+               <div className="h-px bg-gray-200 flex-1"></div>
+               <span>o usa tu correo</span>
+               <div className="h-px bg-gray-200 flex-1"></div>
+             </div>
+
+             <div className="relative group">
+               <Mail className="absolute left-4 top-3.5 text-gray-400 group-focus-within:text-rose-500 transition-colors" size={18} />
+               <input type="email" placeholder="Correo electrónico" className="w-full pl-12 p-3 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-rose-400 transition-all" />
+             </div>
+             
+             <div className="relative group">
+               <Lock className="absolute left-4 top-3.5 text-gray-400 group-focus-within:text-rose-500 transition-colors" size={18} />
+               <input type="password" placeholder="Contraseña" className="w-full pl-12 p-3 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-rose-400 transition-all" />
+             </div>
+
+             <button onClick={() => alert("Pronto habilitaremos registro por correo. Por ahora usa Google.")} className="w-full bg-rose-500 text-white p-3 rounded-xl font-bold hover:bg-rose-600 shadow-lg transition transform active:scale-95">
+               {mode === 'LOGIN' ? 'Entrar' : 'Crear Cuenta'}
+             </button>
+          </div>
+          
+          <p className="text-center mt-6 text-xs text-gray-400">
+             Al continuar, aceptas nuestros <span className="underline cursor-pointer hover:text-rose-500">Términos</span> y <span className="underline cursor-pointer hover:text-rose-500">Privacidad</span>.
+          </p>
+       </div>
+    </div>
+  );
+};
+
+const OnboardingWizard = ({ onComplete }: any) => {
+  const [step, setStep] = useState(1);
+  const [data, setData] = useState({ name: '', businessName: '', businessType: '', stage: '', goal: '' });
+
+  const handleNext = () => {
+    if (step < 4) setStep(step + 1);
+    else onComplete(data);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-rose-50 z-50 flex items-center justify-center p-4">
+       <div className="max-w-xl w-full bg-white rounded-3xl shadow-xl p-8 relative overflow-hidden animate-slide-up">
+          {/* Progress Bar */}
+          <div className="absolute top-0 left-0 w-full h-2 bg-gray-100">
+            <div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${(step/4)*100}%` }}></div>
+          </div>
+
+          <div className="mb-8 text-center mt-4">
+             <div className="w-16 h-16 bg-rose-100 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl font-bold animate-bounce">
+               {step === 1 ? '👋' : step === 2 ? '🍰' : step === 3 ? '📈' : '🎯'}
+             </div>
+             <h2 className="text-2xl font-bold text-gray-800">
+               {step === 1 ? '¡Hola socia! Preséntate.' : step === 2 ? 'Cuéntame de tu negocio' : step === 3 ? '¿En qué etapa estás?' : '¿Cuál es tu sueño?'}
+             </h2>
+             <p className="text-gray-500 mt-2">
+               {step === 1 ? 'Carmelita quiere saber cómo llamarte.' : step === 2 ? 'Para darte consejos a tu medida.' : step === 3 ? 'Para saber qué herramientas priorizar.' : 'Para ayudarte a alcanzarlo.'}
+             </p>
+          </div>
+
+          <div className="mb-8 min-h-[200px]">
+             {step === 1 && (
+               <div className="space-y-4 animate-fade-in">
+                 <div>
+                   <label className="block text-sm font-bold text-gray-700 mb-1">Tu Nombre</label>
+                   <input autoFocus className="w-full text-lg p-4 border-2 border-gray-100 rounded-xl focus:border-rose-500 outline-none bg-gray-50" placeholder="Ej: Ana María" value={data.name} onChange={e=>setData({...data, name: e.target.value})} />
+                 </div>
+                 <div>
+                   <label className="block text-sm font-bold text-gray-700 mb-1">Nombre de tu Negocio</label>
+                   <input className="w-full text-lg p-4 border-2 border-gray-100 rounded-xl focus:border-rose-500 outline-none bg-gray-50" placeholder="Ej: Pastelería Dulce Amor" value={data.businessName} onChange={e=>setData({...data, businessName: e.target.value})} />
+                 </div>
+               </div>
+             )}
+             {step === 2 && (
+               <div className="grid grid-cols-2 gap-3 animate-fade-in">
+                  {['Repostería', 'Comida / Catering', 'Belleza / Spa', 'Ropa / Moda', 'Servicios Prof.', 'Artesanía / Manualidades'].map(opt => (
+                    <button key={opt} onClick={() => setData({...data, businessType: opt})} className={`p-4 rounded-xl font-bold border-2 transition text-sm ${data.businessType === opt ? 'border-rose-500 bg-rose-50 text-rose-700' : 'border-gray-100 hover:border-rose-200'}`}>
+                      {opt}
+                    </button>
+                  ))}
+               </div>
+             )}
+             {step === 3 && (
+               <div className="space-y-3 animate-fade-in">
+                 {[
+                   { id: 'IDEA', label: 'Solo tengo la idea', desc: 'Aún no vendo nada.' },
+                   { id: 'START', label: 'Acabo de empezar', desc: 'Llevo menos de 6 meses.' },
+                   { id: 'GROW', label: 'Quiero crecer', desc: 'Ya vendo, pero quiero más.' },
+                   { id: 'PRO', label: 'Soy una máster', desc: 'Tengo equipo y local.' }
+                 ].map(opt => (
+                   <button key={opt.id} onClick={() => setData({...data, stage: opt.id})} className={`w-full p-4 rounded-xl text-left border-2 transition flex items-center justify-between ${data.stage === opt.id ? 'border-purple-500 bg-purple-50' : 'border-gray-100 hover:border-purple-200'}`}>
+                     <div>
+                       <p className={`font-bold ${data.stage === opt.id ? 'text-purple-700' : 'text-gray-800'}`}>{opt.label}</p>
+                       <p className="text-xs text-gray-500">{opt.desc}</p>
+                     </div>
+                     {data.stage === opt.id && <CheckCircle className="text-purple-500" size={20} />}
+                   </button>
+                 ))}
+               </div>
+             )}
+             {step === 4 && (
+               <div className="space-y-3 animate-fade-in">
+                 {['Sobrevivir el mes sin estrés', 'Hacer crecer mis ventas', 'Tener más tiempo libre', 'Comprar equipo nuevo'].map(opt => (
+                   <button key={opt} onClick={() => setData({...data, goal: opt})} className={`w-full p-4 rounded-xl font-bold border-2 text-left transition ${data.goal === opt ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-gray-100 hover:border-emerald-200'}`}>
+                     {opt}
+                   </button>
+                 ))}
+               </div>
+             )}
+          </div>
+
+          <button onClick={handleNext} disabled={(step===1 && (!data.name || !data.businessName)) || (step===2 && !data.businessType) || (step===3 && !data.stage) || (step===4 && !data.goal)} className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold text-lg hover:bg-black transition disabled:opacity-50 shadow-xl">
+            {step === 4 ? 'Comenzar Aventura' : 'Siguiente'}
+          </button>
+       </div>
+    </div>
+  );
+};
+
 const NavItem = ({ icon, label, active, onClick }: any) => (
   <button onClick={onClick} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${active ? 'bg-rose-500 text-white shadow-lg' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}`}>
     {icon}
@@ -257,26 +464,32 @@ const SupportSection = ({ user }: any) => {
   );
 };
 
-// --- MODERN FINANCIAL TREE DASHBOARD ---
+// --- ORGANIC VECTOR TREE DASHBOARD ---
 const Dashboard = ({ records, advice, loading, onViewChange, userName }: any) => {
   const totalIncome = records.filter((r:any) => r.type === 'INCOME').reduce((acc:number, curr:any) => acc + curr.amount, 0);
   const totalExpense = records.filter((r:any) => r.type === 'EXPENSE').reduce((acc:number, curr:any) => acc + curr.amount, 0);
   const healthScore = totalIncome - totalExpense;
   const isHealthy = healthScore > 0;
-
-  // Generate abstract nodes for income sources (Leaves)
-  const incomeNodes = records.filter((r:any) => r.type === 'INCOME').slice(0, 5);
+  
+  // Calculate visual scales
+  // Income affects Canopy Size. Standard size 1. If income is huge, up to 1.5. If low, down to 0.7
+  const canopyScale = Math.max(0.7, Math.min(1.5, 0.8 + (totalIncome / 20000)));
+  
+  // Expenses affect Roots "Visibility" or size. If expenses are high compared to income, roots might look "stressed" (red) or just big.
+  // For this visual, let's make roots proportional to expenses to show "grounding" or "drag".
+  const rootColor = totalExpense > totalIncome ? '#f87171' : '#8B4513'; // Red roots if debt is high
+  const canopyColor = isHealthy ? '#4ade80' : '#facc15'; // Green vs Yellow leaves
 
   return (
     <div className="space-y-8 animate-fade-in">
       <header className="flex justify-between items-end">
          <div>
             <h1 className="text-3xl font-bold text-gray-900">Hola, {userName}</h1>
-            <p className="text-gray-500">Resumen Ejecutivo del Negocio</p>
+            <p className="text-gray-500">Estado de Salud de tu Negocio</p>
          </div>
          <div className="hidden md:block">
             <span className={`px-4 py-2 rounded-full font-bold text-sm ${isHealthy ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-              {isHealthy ? 'Flujo Saludable 🟢' : 'Atención Requerida 🔴'}
+              {isHealthy ? 'Creciendo Fuerte 🌳' : 'Necesita Nutrientes 🍂'}
             </span>
          </div>
       </header>
@@ -286,66 +499,76 @@ const Dashboard = ({ records, advice, loading, onViewChange, userName }: any) =>
          <div className="w-12 h-12 bg-gradient-to-br from-rose-500 to-purple-600 text-white rounded-xl flex-shrink-0 flex items-center justify-center font-bold text-xl shadow-md">C</div>
          <div>
            <h3 className="font-bold text-gray-900 mb-1 text-sm uppercase tracking-wide">Carmelita Insight</h3>
-           {loading ? <p className="text-gray-400 italic">Analizando datos...</p> : <p className="text-gray-700 leading-relaxed">"{advice}"</p>}
+           {loading ? <p className="text-gray-400 italic">Consultando mis libros...</p> : <p className="text-gray-700 leading-relaxed">"{advice}"</p>}
          </div>
       </div>
 
-      {/* MODERN ABSTRACT TREE VISUALIZATION */}
-      <div className="relative bg-white h-[500px] rounded-3xl shadow-lg border border-gray-100 overflow-hidden flex flex-col items-center justify-between p-8">
-         {/* Background Subtle Grid */}
-         <div className="absolute inset-0 opacity-5" style={{ backgroundImage: 'radial-gradient(#444 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
-
-         {/* 1. CANOPY (Income) - Floating Glassmorphism Orbs */}
-         <div className="relative w-full h-1/2 flex justify-center items-end z-10">
-            {incomeNodes.map((node: any, i: number) => (
-              <div key={i} 
-                className="absolute bg-emerald-500/20 backdrop-blur-md border border-emerald-500/30 rounded-full flex items-center justify-center text-xs font-bold text-emerald-800 shadow-sm animate-float"
-                style={{
-                  width: `${Math.max(60, Math.min(120, node.amount / 50))}px`,
-                  height: `${Math.max(60, Math.min(120, node.amount / 50))}px`,
-                  bottom: `${Math.random() * 50 + 20}px`,
-                  left: `${(i + 1) * (100 / (incomeNodes.length + 1))}%`,
-                  transform: 'translateX(-50%)'
-                }}
-              >
-                <div className="text-center">
-                   <p>${node.amount}</p>
-                   <p className="text-[9px] opacity-70 truncate max-w-[50px]">{node.category}</p>
-                </div>
-              </div>
-            ))}
-            {/* If no income */}
-            {incomeNodes.length === 0 && <div className="text-gray-300 font-bold">Sin frutos aún...</div>}
-         </div>
-
-         {/* 2. TRUNK (Core Flow) - Dynamic Bar */}
-         <div className="relative z-0 flex-1 w-24 bg-gray-100 rounded-2xl overflow-hidden border border-gray-200">
-            {/* The flow liquid */}
-            <div 
-              className={`absolute bottom-0 w-full transition-all duration-1000 ${isHealthy ? 'bg-gradient-to-t from-emerald-500 to-emerald-300' : 'bg-gradient-to-t from-rose-500 to-rose-300'}`}
-              style={{ height: `${Math.min(100, (totalIncome / (totalExpense + 1)) * 50)}%` }}
-            ></div>
-            {/* Labels */}
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-white font-bold drop-shadow-md">
-               <span className="text-xs uppercase opacity-80">Neto</span>
-               <span className="text-lg">${healthScore}</span>
-            </div>
-         </div>
-
-         {/* 3. ROOTS (Expenses/Foundation) - Base Blocks */}
-         <div className="w-full flex justify-center gap-2 mt-2">
-            <div className="h-4 bg-rose-200 rounded-full w-1/3" style={{ opacity: totalExpense > 0 ? 1 : 0.3 }} title={`Gastos: $${totalExpense}`}></div>
-            <div className="h-4 bg-rose-300 rounded-full w-1/4" style={{ opacity: totalExpense > 1000 ? 1 : 0.3 }}></div>
-            <div className="h-4 bg-rose-400 rounded-full w-1/6" style={{ opacity: totalExpense > 5000 ? 1 : 0.3 }}></div>
-         </div>
+      {/* ORGANIC TREE VISUALIZATION */}
+      <div className="relative bg-gradient-to-b from-sky-50 to-white h-[450px] rounded-3xl shadow-lg border border-gray-100 overflow-hidden flex flex-col items-center justify-end">
          
-         {/* Overlay Info */}
-         <div className="absolute top-4 left-4 bg-white/90 backdrop-blur px-4 py-2 rounded-xl text-xs font-bold shadow-sm border border-gray-100">
-           <span className="text-emerald-600 block">Ingresos: ${totalIncome}</span>
+         {/* Sky Elements */}
+         <div className="absolute top-8 right-8 w-16 h-16 bg-yellow-300 rounded-full blur-xl opacity-60 animate-pulse"></div>
+         <div className="absolute top-10 right-10 w-12 h-12 bg-yellow-400 rounded-full"></div>
+
+         <div className="relative z-10 w-full h-full flex items-end justify-center pb-8">
+            <svg width="320" height="380" viewBox="0 0 320 380" className="drop-shadow-xl transition-all duration-1000 ease-in-out">
+               {/* 
+                 TRUNK & ROOTS 
+                 Drawing a path that starts at bottom, forms roots, goes up to trunk.
+               */}
+               <defs>
+                 <linearGradient id="trunkGrad" x1="0" x2="1" y1="0" y2="0">
+                   <stop offset="0%" stopColor="#5D4037" />
+                   <stop offset="50%" stopColor="#8D6E63" />
+                   <stop offset="100%" stopColor="#5D4037" />
+                 </linearGradient>
+                 <radialGradient id="canopyGrad" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+                    <stop offset="0%" stopColor={isHealthy ? "#86efac" : "#fde047"} /> {/* Inner Light */}
+                    <stop offset="100%" stopColor={isHealthy ? "#16a34a" : "#ca8a04"} /> {/* Outer Dark */}
+                 </radialGradient>
+               </defs>
+
+               {/* Roots (Base) */}
+               <path 
+                 d="M140 350 Q120 370 100 380 M180 350 Q200 370 220 380 M160 350 L160 380" 
+                 stroke={rootColor} strokeWidth="6" fill="none" strokeLinecap="round" 
+               />
+               
+               {/* Trunk */}
+               <path 
+                 d="M160 350 C160 300 150 250 160 200 C170 250 160 300 160 350" 
+                 fill="url(#trunkGrad)" stroke="#3E2723" strokeWidth="2"
+               />
+               
+               {/* Branches */}
+               <path d="M160 240 Q130 210 120 190" stroke="#5D4037" strokeWidth="4" fill="none" />
+               <path d="M160 220 Q190 200 200 180" stroke="#5D4037" strokeWidth="4" fill="none" />
+
+               {/* CANOPY (Foliage) - Scaled by Income */}
+               <g transform={`translate(160, 160) scale(${canopyScale})`}>
+                  {/* We animate this group gently to simulate wind */}
+                  <g className="animate-float">
+                     <circle cx="-60" cy="10" r="50" fill="url(#canopyGrad)" opacity="0.9" />
+                     <circle cx="60" cy="10" r="50" fill="url(#canopyGrad)" opacity="0.9" />
+                     <circle cx="-30" cy="-50" r="55" fill="url(#canopyGrad)" opacity="0.95" />
+                     <circle cx="30" cy="-50" r="55" fill="url(#canopyGrad)" opacity="0.95" />
+                     <circle cx="0" cy="-20" r="60" fill="url(#canopyGrad)" />
+                  </g>
+               </g>
+            </svg>
          </div>
-         <div className="absolute top-4 right-4 bg-white/90 backdrop-blur px-4 py-2 rounded-xl text-xs font-bold shadow-sm border border-gray-100">
-           <span className="text-rose-600 block">Gastos: ${totalExpense}</span>
+
+         {/* Ground */}
+         <div className="absolute bottom-0 w-full h-12 bg-emerald-50 border-t border-emerald-100"></div>
+
+         {/* Stats overlay */}
+         <div className="absolute bottom-4 left-6 bg-white/90 px-3 py-1 rounded-lg text-xs font-bold shadow text-rose-600 border border-rose-100">
+            Raíces (Gastos): ${totalExpense}
          </div>
+         <div className="absolute top-20 right-6 bg-white/90 px-3 py-1 rounded-lg text-xs font-bold shadow text-emerald-600 border border-emerald-100">
+            Copa (Ingresos): ${totalIncome}
+         </div>
+
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -857,61 +1080,82 @@ const SocialCafe = ({ user }: any) => {
   );
 };
 
-const Store = ({ user }: any) => (
-  <div className="max-w-4xl mx-auto text-center">
-     <h1 className="text-3xl font-bold mb-2">Tiendita Carmelita</h1>
-     <p className="mb-8 text-gray-500">Créditos y Membresías para tu negocio.</p>
-     
-     {/* Credits */}
-     <div className="grid md:grid-cols-3 gap-6 mb-12">
-       <div className="bg-white p-6 rounded-3xl shadow border border-gray-100 hover:border-rose-300 transition-colors">
-          <h3 className="font-bold text-xl mb-2">Puccito</h3>
-          <p className="text-3xl font-bold text-rose-500 mb-4">50 CC</p>
-          <p className="text-gray-500 text-sm mb-6">$49 MXN</p>
-          <button className="w-full py-2 bg-gray-900 text-white rounded-xl font-bold">Comprar</button>
-       </div>
-       <div className="bg-rose-500 text-white p-8 rounded-3xl shadow-xl transform scale-105">
-          <h3 className="font-bold text-xl mb-2">El Cafecito</h3>
-          <p className="text-3xl font-bold mb-4">150 CC</p>
-          <p className="opacity-80 text-sm mb-6">$129 MXN</p>
-          <button className="w-full py-3 bg-white text-rose-600 rounded-xl font-bold">Comprar</button>
-       </div>
-       <div className="bg-white p-6 rounded-3xl shadow border border-gray-100 hover:border-rose-300 transition-colors">
-          <h3 className="font-bold text-xl mb-2">La Comida</h3>
-          <p className="text-3xl font-bold text-rose-500 mb-4">500 CC</p>
-          <p className="text-gray-500 text-sm mb-6">$399 MXN</p>
-          <button className="w-full py-2 bg-gray-900 text-white rounded-xl font-bold">Comprar</button>
-       </div>
-     </div>
+const Store = ({ user }: any) => {
+  const getPayLink = (url: string) => `${url}?client_reference_id=${user.uid}`;
 
-     {/* Memberships */}
-     <h2 className="text-2xl font-bold mb-6">Membresías</h2>
-     <div className="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto">
-        <div className="bg-gray-100 p-6 rounded-3xl">
-           <h3 className="font-bold text-xl mb-2">Básica</h3>
-           <p className="text-sm text-gray-600 mb-4">Herramientas esenciales</p>
-           <ul className="text-left text-sm space-y-2 mb-6 px-4">
-             <li>✅ Árbol Financiero</li>
-             <li>✅ Calculadora SAT</li>
-           </ul>
-           <button className="w-full py-2 border-2 border-gray-300 rounded-xl font-bold">Gratis</button>
-        </div>
-        <div className="bg-purple-100 p-6 rounded-3xl border border-purple-200">
-           <div className="flex justify-center items-center gap-2 mb-2">
-             <Star className="text-purple-600" fill="currentColor" />
-             <h3 className="font-bold text-xl text-purple-900">Premium</h3>
-           </div>
-           <p className="text-sm text-purple-700 mb-4">Todo ilimitado + IA avanzada</p>
-           <ul className="text-left text-sm space-y-2 mb-6 px-4 text-purple-800">
-             <li>✅ Agencia de Marketing IA (Veo)</li>
-             <li>✅ CRM Ilimitado</li>
-             <li>✅ Soporte Prioritario</li>
-           </ul>
-           <button className="w-full py-2 bg-purple-600 text-white rounded-xl font-bold">Suscribirse ($199/mes)</button>
-        </div>
-     </div>
-  </div>
-);
+  return (
+    <div className="max-w-4xl mx-auto text-center">
+       <h1 className="text-3xl font-bold mb-2">Tiendita Carmelita</h1>
+       <p className="mb-12 text-gray-500">Invierte en tu negocio para ganar más.</p>
+       
+       {/* 1. CREDIT PACKS */}
+       <div className="mb-16">
+          <h2 className="text-2xl font-bold mb-6 text-gray-800 flex items-center justify-center gap-2">
+            <DollarSign className="text-rose-500" /> Recargas de Créditos
+          </h2>
+          <div className="grid md:grid-cols-2 gap-6 max-w-2xl mx-auto">
+            {/* Puccito (50 CC) */}
+            <div className="bg-white p-8 rounded-3xl shadow hover:shadow-lg transition border border-gray-100">
+               <h3 className="font-bold text-xl mb-2">Pack Puccito</h3>
+               <p className="text-4xl font-bold text-rose-500 mb-2">50 CC</p>
+               <p className="text-gray-400 text-sm mb-6">Ideal para probar</p>
+               <a href={getPayLink('https://buy.stripe.com/14AdR9d5jbsD4SYcdLdUY02')} className="block w-full py-3 bg-gray-900 text-white rounded-xl font-bold hover:bg-black transition">
+                 Comprar Ahora
+               </a>
+            </div>
+            
+            {/* Inteligente (150 CC) */}
+            <div className="bg-rose-500 text-white p-8 rounded-3xl shadow-xl transform scale-105 border-4 border-white">
+               <div className="absolute top-0 right-0 bg-yellow-400 text-yellow-900 text-xs font-bold px-3 py-1 rounded-bl-xl rounded-tr-2xl">MÁS VENDIDO</div>
+               <h3 className="font-bold text-xl mb-2">Pack Inteligente</h3>
+               <p className="text-4xl font-bold mb-2">150 CC</p>
+               <p className="opacity-80 text-sm mb-6">Para emprendedoras activas</p>
+               <a href={getPayLink('https://buy.stripe.com/00weVd2qF7cn0CIdhPdUY03')} className="block w-full py-3 bg-white text-rose-600 rounded-xl font-bold hover:bg-gray-100 transition">
+                 Comprar Ahora
+               </a>
+            </div>
+          </div>
+       </div>
+  
+       {/* 2. MEMBERSHIPS */}
+       <div>
+          <h2 className="text-2xl font-bold mb-6 text-gray-800 flex items-center justify-center gap-2">
+            <Star className="text-purple-500" /> Membresías
+          </h2>
+          <div className="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto">
+             <div className="bg-white p-6 rounded-3xl border-2 border-gray-100 hover:border-gray-300 transition">
+                <h3 className="font-bold text-xl mb-2 text-gray-700">Básica</h3>
+                <p className="text-sm text-gray-500 mb-4">Empieza con el pie derecho</p>
+                <ul className="text-left text-sm space-y-3 mb-8 px-4 text-gray-600">
+                  <li>✅ Pack de Créditos Inicial</li>
+                  <li>✅ Acceso a Herramientas Esenciales</li>
+                  <li>✅ Soporte por Correo</li>
+                </ul>
+                <a href={getPayLink('https://buy.stripe.com/14A8wP2qFbsDclq6TrdUY00')} className="block w-full py-3 border-2 border-gray-900 text-gray-900 rounded-xl font-bold hover:bg-gray-50 transition">
+                  Suscribirse
+                </a>
+             </div>
+             <div className="bg-purple-50 p-6 rounded-3xl border-2 border-purple-200 hover:border-purple-300 transition relative overflow-hidden">
+                <div className="absolute -right-5 -top-5 w-20 h-20 bg-purple-200 rounded-full blur-xl"></div>
+                <div className="flex justify-center items-center gap-2 mb-2">
+                  <Star className="text-purple-600" fill="currentColor" size={20} />
+                  <h3 className="font-bold text-xl text-purple-900">Premium</h3>
+                </div>
+                <p className="text-sm text-purple-700 mb-4">Lleva tu negocio al siguiente nivel</p>
+                <ul className="text-left text-sm space-y-3 mb-8 px-4 text-purple-900 font-medium">
+                  <li>✅ <span className="font-bold">Pack Créditos Premium (500 CC)</span></li>
+                  <li>✅ Agencia de Marketing IA Ilimitada</li>
+                  <li>✅ Soporte Prioritario 24/7</li>
+                </ul>
+                <a href={getPayLink('https://buy.stripe.com/fZu8wP9T7fITgBGcdLdUY01')} className="block w-full py-3 bg-purple-600 text-white rounded-xl font-bold hover:bg-purple-700 transition shadow-lg">
+                  Ser Premium
+                </a>
+             </div>
+          </div>
+       </div>
+    </div>
+  );
+};
 
 const HeaderBack = ({ title, onBack, noMargin }: any) => (
   <div className={`flex items-center gap-4 ${noMargin ? '' : 'mb-6'}`}>

@@ -3,11 +3,12 @@ import { ArrowRight, Heart, TrendingUp, Users, ShieldCheck, Lock } from 'lucide-
 
 interface Props {
   onLogin: () => void;
+  onRegister: () => void;
   onAdminLogin: () => void;
   onAffiliate: () => void;
 }
 
-export default function LandingPage({ onLogin, onAdminLogin, onAffiliate }: Props) {
+export default function LandingPage({ onLogin, onRegister, onAdminLogin, onAffiliate }: Props) {
   return (
     <div className="min-h-screen bg-rose-50 font-sans text-gray-800">
       {/* Hero */}
@@ -23,8 +24,8 @@ export default function LandingPage({ onLogin, onAdminLogin, onAffiliate }: Prop
             <Lock size={14} /> Modo Admin
           </button>
 
-          <button onClick={onLogin} className="bg-rose-500 hover:bg-rose-600 text-white px-6 py-2 rounded-full shadow-lg transition transform hover:scale-105 font-bold">
-            Entrar como Usuaria
+          <button onClick={onLogin} className="bg-white hover:bg-gray-50 text-rose-600 px-6 py-2 rounded-full shadow-sm border border-rose-100 transition font-bold">
+            Entrar
           </button>
         </div>
       </nav>
@@ -32,17 +33,17 @@ export default function LandingPage({ onLogin, onAdminLogin, onAffiliate }: Prop
       <header className="max-w-7xl mx-auto px-6 py-16 text-center lg:text-left flex flex-col lg:flex-row items-center">
         <div className="lg:w-1/2 mb-10 lg:mb-0">
           <span className="inline-block bg-rose-100 text-rose-600 px-4 py-1 rounded-full text-sm font-bold mb-4 animate-bounce">
-            ✨ Tu Socia Financiera con IA ✨
+            ✨ Tu amiga experta en finanzas ✨
           </span>
           <h1 className="text-5xl lg:text-6xl font-extrabold text-gray-900 leading-tight mb-6">
             Haz crecer tu negocio <br/>
             <span className="text-rose-500 font-script">sin perder la paz</span>
           </h1>
           <p className="text-xl text-gray-600 mb-8 max-w-lg mx-auto lg:mx-0 leading-relaxed">
-            Carmelita organiza tus cuentas, crea tu marketing mágico y te enseña a cobrar lo justo. Todo con el profesionalismo que te mereces, socia.
+            Carmelita organiza tus cuentas, crea tu marketing mágico y te enseña a cobrar lo justo. Todo con la claridad y confianza que necesitas, amiga.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
-            <button onClick={onLogin} className="bg-emerald-500 hover:bg-emerald-600 text-white text-lg px-8 py-4 rounded-3xl shadow-xl flex items-center justify-center transition transform hover:scale-105 font-bold">
+            <button onClick={onRegister} className="bg-emerald-500 hover:bg-emerald-600 text-white text-lg px-8 py-4 rounded-3xl shadow-xl flex items-center justify-center transition transform hover:scale-105 font-bold">
               Comenzar Gratis <ArrowRight className="ml-2" />
             </button>
             <button onClick={onAffiliate} className="bg-white text-rose-500 border-2 border-rose-100 hover:border-rose-300 text-lg px-8 py-4 rounded-3xl flex items-center justify-center font-bold">
@@ -61,8 +62,8 @@ export default function LandingPage({ onLogin, onAdminLogin, onAffiliate }: Prop
                 </div>
               </div>
               <p className="text-gray-700 text-lg italic leading-relaxed">
-                "Hola socia, vi que vendiste muy bien esta semana. ¡Felicidades! 🎉 
-                Ya separé el 10% para tus impuestos y otro 10% para ese horno nuevo que quieres. ¿Vemos cómo va tu rentabilidad?"
+                "¡Hola! Vi que vendiste muy bien esta semana. ¡Felicidades! 🎉 
+                Ya separé el 10% para tus impuestos y otro 10% para ese horno nuevo que quieres. ¿Vemos cómo va tu ganancia real?"
               </p>
            </div>
            {/* Decorative blobs */}
